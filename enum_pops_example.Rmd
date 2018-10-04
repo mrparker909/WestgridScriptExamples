@@ -1,0 +1,122 @@
+---
+title: "Run Many Simulations at Once"
+author: "Matthew Parker"
+date: "October 4, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Purpose
+
+The purpose of this document is to explain how to automate creation of a list of parameter combinations, which can then be used to run simulations.
+
+## Illustrative Example
+
+To aid in understanding, we will consider the simple example of simulating a Binomial random variable with many different values for $N$ and $p$.
+
+\[
+  X \sim Bin(N,p)
+\]
+
+We will also specify $n$, the number of samples we want to generate with each parameter combination (in this case we will just use one value for $n$, but we could have many values just like for the other parameters).
+
+## List Parameter Values
+
+```{r parameterValues}
+N_opts <- seq(10,50,10)
+p_opts <- seq(0.1,0.9,0.2)
+n_opts <- 100
+
+param_list <- list(N=N_opts, p=p_opts, n=n_opts)
+print(param_list)
+```
+
+## Enumerate Combinations
+
+Create a data.frame where each row is a combination of parameters, and all parameter combinations are present in the data.frame.
+
+```{r enumerateCombinations}
+enum <- expand.grid(param_list, stringsAsFactors = FALSE)
+head(enum)
+nrow(enum) # print the number of rows in enum, need to know this for SLURM script
+```
+
+## Save For Later Use
+
+By saving this to a file, we can access it when running a simulation study. We will save it to the file *df_enum_pops.RDS*.
+
+```{r save_pops_rds, eval=FALSE}
+saveRDS(object = enum, file = "./df_enum_pops.RDS")
+```
+
+
+## R Simulation Script
+
+This is the script that will run the simulation. Save the script as *simulation.R*. Note that the counter variable is passed through the command line via the SLURM script (see the next section for details). The counter variable is used to select which row of the enumerated parameter combinations we want to run the simulation for.
+
+Results will be appended to a csv file called *results.csv*
+
+```{r simulationStep, eval=FALSE}
+# store the command line arguments
+args <- commandArgs(TRUE)
+# create a counter for your index from the first command line argument
+counter <- as.integer(args[1])
+# load the data.frame we generated previously
+enum <- readRDS("./df_enum_pops.RDS")
+
+# run simulation based on row "counter" of the enum data.frame
+results <- rbinom(n    = enum[counter,]$n, 
+                  size = enum[counter,]$N, 
+                  prob = enum[counter,]$p)
+
+# put results into a named vector (so you know where the data came from later!)
+named_results <- c(n       = enum[counter,]$n, 
+                   size    = enum[counter,]$N, 
+                   prob    = enum[counter,]$p,
+                   results = results)
+results2 <- matrix(named_results, nrow=1)
+colnames(results2) <- names(named_results)
+
+# save the results to a csv file called results.csv, 
+# check if the results.csv file exists to decide if we append column names
+write.table(x = results2, file = "./results.csv", 
+            append = T, sep = ",", row.names = F, 
+            col.names = !file.exists("./results.csv"))
+```
+
+## SLURM SCRIPT
+
+This is the script that will submit and run each simulation, save it in a file called *submit_script.sl*, you can run it using the command:
+
+```{r ex1, eval=FALSE}
+  sbatch submit_script.sl
+```
+
+We use the *--array=1-25* to run each of the simulations (note that 25 is the number of rows in our *df_enum_pops.RDS* file).
+
+```{r slurmExample, eval=FALSE}
+#!/bin/bash -l
+#SBATCH -J run_name
+#SBATCH --array=1-25
+#SBATCH --time=0--01:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=1000M
+#SBATCH --mail-user=mrparker909@gmail.com
+#SBATCH --mail-type=ALL
+
+module load r/3.3.3
+cd $SLURM_SUBMIT_DIR
+Rscript ./simulation.R $SLURM_ARRAY_TASK_ID >&
+./log/log_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}.txt
+```
+
+
+
+
+
+
