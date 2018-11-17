@@ -66,6 +66,9 @@ args <- commandArgs(TRUE)
 counter <- as.integer(args[1])
 # load the data.frame we generated previously
 enum <- readRDS("./df_enum_pops.RDS")
+# MAX_COUNTER tells us when we are on the final simulation, and should 
+# concatenate our csv files into one
+MAX_COUNTER <- nrow(enum) 
 
 # run simulation based on row "counter" of the enum data.frame
 results <- rbinom(n    = enum[counter,]$n, 
@@ -80,11 +83,29 @@ named_results <- c(n       = enum[counter,]$n,
 results2 <- matrix(named_results, nrow=1)
 colnames(results2) <- names(named_results)
 
-# save the results to a csv file called results.csv, 
-# check if the results.csv file exists to decide if we append column names
-write.table(x = results2, file = "./results.csv", 
-            append = T, sep = ",", row.names = F, 
-            col.names = !file.exists("./results.csv"))
+# save the results to a csv file called results_i.csv, where i equals counter
+# to protect against simultaneous file writing, we will concatenate the files at the end
+write.table(x = results2, file = paste0("./results_",counter,".csv"), 
+            append = F, sep = ",", row.names = F, col.names = T)
+
+# wait until all csv files have been written, then concatenate
+if(counter==MAX_COUNTER) {
+  l        <- 0
+  csvFiles <- NULL
+  # wait until all files exist
+  while(l < MAX_COUNTER) { 
+    # read in csv files starting with "results_" and ending with ".csv"
+    csvFiles = list.files(pattern="^results_.*\\.csv$")
+    l <- length(csvFiles)
+    # check if all files exist once every 10 seconds
+    Sys.sleep(10) 
+  }
+  # combine all csv files into one
+  onecsv = do.call(rbind, lapply(csvFiles, function(x) read.csv(x, stringsAsFactors = FALSE)))
+  # write "results.csv"
+  write.table(x = onecsv, file = paste0("./results.csv"), 
+            append = F, sep = ",", row.names = F, col.names = T)
+}
 ```
 
 ## SLURM SCRIPT
