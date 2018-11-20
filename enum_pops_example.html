@@ -180,16 +180,13 @@ head(enum)</code></pre>
 <div id="r-simulation-script" class="section level2">
 <h2>R Simulation Script</h2>
 <p>This is the script that will run the simulation. Save the script as <em>simulation.R</em>. Note that the counter variable is passed through the command line via the SLURM script (see the next section for details). The counter variable is used to select which row of the enumerated parameter combinations we want to run the simulation for.</p>
-<p>Results will be appended to a csv file called <em>results.csv</em></p>
+<p>Results will be appended to a csv file called <em>results.csv</em> later.</p>
 <pre class="r"><code># store the command line arguments
 args &lt;- commandArgs(TRUE)
 # create a counter for your index from the first command line argument
 counter &lt;- as.integer(args[1])
 # load the data.frame we generated previously
 enum &lt;- readRDS(&quot;./df_enum_pops.RDS&quot;)
-# MAX_COUNTER tells us when we are on the final simulation, and should 
-# concatenate our csv files into one
-MAX_COUNTER &lt;- nrow(enum) 
 
 # run simulation based on row &quot;counter&quot; of the enum data.frame
 results &lt;- rbinom(n    = enum[counter,]$n, 
@@ -207,26 +204,7 @@ colnames(results2) &lt;- names(named_results)
 # save the results to a csv file called results_i.csv, where i equals counter
 # to protect against simultaneous file writing, we will concatenate the files at the end
 write.table(x = results2, file = paste0(&quot;./results_&quot;,counter,&quot;.csv&quot;), 
-            append = F, sep = &quot;,&quot;, row.names = F, col.names = T)
-
-# wait until all csv files have been written, then concatenate
-if(counter==MAX_COUNTER) {
-  l        &lt;- 0
-  csvFiles &lt;- NULL
-  # wait until all files exist
-  while(l &lt; MAX_COUNTER) { 
-    # read in csv files starting with &quot;results_&quot; and ending with &quot;.csv&quot;
-    csvFiles = list.files(pattern=&quot;^results_.*\\.csv$&quot;)
-    l &lt;- length(csvFiles)
-    # check if all files exist once every 10 seconds
-    Sys.sleep(10) 
-  }
-  # combine all csv files into one
-  onecsv = do.call(rbind, lapply(csvFiles, function(x) read.csv(x, stringsAsFactors = FALSE)))
-  # write &quot;results.csv&quot;
-  write.table(x = onecsv, file = paste0(&quot;./results.csv&quot;), 
-            append = F, sep = &quot;,&quot;, row.names = F, col.names = T)
-}</code></pre>
+            append = F, sep = &quot;,&quot;, row.names = F, col.names = T)</code></pre>
 </div>
 <div id="slurm-script" class="section level2">
 <h2>SLURM SCRIPT</h2>
@@ -248,6 +226,19 @@ module load r/3.3.3
 cd $SLURM_SUBMIT_DIR
 Rscript ./simulation.R $SLURM_ARRAY_TASK_ID &gt;&amp;
 ./log/log_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}.txt</code></pre>
+</div>
+<div id="concatenate-results" class="section level2">
+<h2>Concatenate Results</h2>
+<p>Once the job has finished, you will want to append all of your results into one file <em>results.csv</em>. This is easy to do using the following R script:</p>
+<pre class="r"><code># read in csv files starting with &quot;results_&quot; and ending with &quot;.csv&quot;
+csvFiles = list.files(pattern=&quot;^results_.*\\.csv$&quot;)
+
+# combine all csv files into one
+onecsv = do.call(rbind, lapply(csvFiles, function(x) read.csv(x, stringsAsFactors = FALSE)))
+
+# write &quot;results.csv&quot;
+write.table(x = onecsv, file = paste0(&quot;./results.csv&quot;), 
+            append = F, sep = &quot;,&quot;, row.names = F, col.names = T)</code></pre>
 </div>
 
 
